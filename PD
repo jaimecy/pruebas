@@ -1,0 +1,691 @@
+import React, {
+  useState,
+  useContext,
+  Fragment,
+  useCallback,
+  useEffect
+} from 'react'
+import Dialog from '@components/Dialog'
+import FormActions from '@components/FormActions'
+import HeaderTitle from '@components/HeaderTitle'
+import { useForm } from '@hooks/useForm'
+import {
+  Grid,
+  TextField,
+  Typography,
+  Box,
+  Button,
+  MenuItem,
+  Select,
+  InputLabel,
+  FormControl
+} from '@mui/material'
+import serviceParticipants from '@services/serviceParticipants'
+import { useCommonStyles } from '@styles/common.style'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import Avatar from '@components/Avatar'
+import CheckBox from '@components/CheckBox'
+import { ListContext } from '@context/ListContext'
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
+import ParticipantCycles from './ParticipantCycles'
+import Card from '@components/Card'
+import Moment from 'react-moment'
+import AutocompleteSearch from '@components/AutocompleteSearch'
+import serviceCompanies from '@services/serviceCompanies'
+import serviceLogin from '@services/serviceLogin'
+import serviceList from '@services/serviceList'
+import serviceFiles from '@services/serviceFiles'
+import Loading from '@components/Loading'
+import { snackActions } from '@helpers/snackbarUtils'
+import { useHandleImages } from '@hooks/useHandleImages'
+
+//TODO: Cambiar select Estado, añadirle valor por defecto
+const ParticipantDetail = () => {
+  const {
+    state: { data: PARTICIPANT_DATA, type: TYPE }
+  } = useLocation()
+
+  const navigate = useNavigate()
+  const classes = useCommonStyles()
+  const { t } = useTranslation()
+  const { languageList } = useContext(ListContext)
+  const [openDialog, setOpenDialog] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [openDialogRequestPassword, setOpenDialogRequestPassword] =
+    useState(false)
+  const [loading, setLoading] = useState(false)
+  const [countries, setCountries] = useState([])
+  const { formData, setFormData, handleChange } = useForm(PARTICIPANT_DATA)
+  const staticIdParticipant = formData.idParticipant
+  const { manageImages, infoData } = useHandleImages()
+
+  const HEADER_TITLE =
+    TYPE === 'NEW' ? t('PARTICIPANT.NEW_TITLE') : t('PARTICIPANT.UPDATE_TITLE')
+  const HEADER_SUBTITLE =
+    TYPE === 'NEW'
+      ? t('PARTICIPANT.NEW_SUBTITLE')
+      : t('PARTICIPANT.UPDATE_SUBTITLE')
+
+  const disabledSaveButton = PARTICIPANT_DATA === formData
+
+  // Funciones para select con autobúsqueda empresas
+  const [companySelected, setCompanySelected] = useState()
+  useEffect(() => {
+    if (companySelected) {
+      handleSelect(companySelected)
+    } else if (companySelected === null || companySelected === undefined) {
+      handleSelect(0)
+    }
+  }, [companySelected])
+
+  const handleSelect = companySelected => {
+    setFormData(prevState => {
+      return {
+        ...prevState,
+        idCompany: companySelected.idCompany
+      }
+    })
+  }
+
+  const cleanDebounce = data => {
+    if (data.globalSearch) data.search = []
+    return data
+  }
+  // Fin funciones para select con autobúsqueda empresas
+
+  useEffect(() => {
+    serviceList.getCountriesList().then(response => {
+      if (!response.error) {
+        setCountries(response.data)
+      }
+    })
+    setFormData({ ...formData, idLanguage: 1 })
+  }, [])
+
+  useEffect(() => {
+    if (
+      infoData?.participantImage !== undefined &&
+      infoData?.participantImage !== null &&
+      infoData?.participantImage.length !== 0
+    ) {
+      setFormData(prevState => {
+        return { ...prevState, participantImage: infoData.participantImage }
+      })
+    }
+  }, [infoData])
+
+  const handleSubmit = type => {
+    switch (type) {
+      case 'NEW':
+        serviceParticipants.newParticipant(formData).then(handleResponse)
+        break
+      case 'UPDATE':
+        serviceParticipants.updateParticipant(formData).then(handleResponse)
+        break
+      case 'DELETE':
+        formData.participantActive = false
+        serviceParticipants.deleteParticipant(formData).then(handleResponse)
+        break
+      default:
+        break
+    }
+  }
+
+  const handleResponse = response => {
+    if (!response.error) {
+      navigate('/participants')
+    }
+  }
+
+  const handleSubmitRequestPassword = email => {
+    setLoading(true)
+    const data = {
+      userEmail: email,
+      requestChangePassword: true,
+      area: 'participant'
+    }
+    serviceLogin.lostPassword(data).then(response => {
+      setLoading(false)
+      if (!response.error) {
+        snackActions.success(t('TEXT.OK_SEND_CHANGE_PASSWORD'))
+      } else {
+        snackActions.error(response.message)
+      }
+      setOpenDialogRequestPassword(false)
+    })
+  }
+
+  useEffect(() => {
+    const userSession = JSON.parse(sessionStorage.getItem('userSession'))
+    userSession.userIdsRoles.map((idRol, i) => {
+      if (idRol === 1) {
+        setIsAdmin(true)
+      }
+    })
+  }, [])
+
+  const simulatedLogin = e => {
+    const userSession = JSON.parse(sessionStorage.getItem('userSession'))
+    if (userSession.userIdsRoles.find(idRole => idRole === 1 || idRole === 3)) {
+      let url =
+        process.env.REACT_APP_PUBLIC_URL_PARTICIPANT_SIMULATED +
+        '?loginToken=' +
+        sessionStorage.getItem('loginToken') +
+        '&email=' +
+        encodeURIComponent(formData.participantEmail)
+      window.open(url, '_blank')
+    } else {
+      snackActions.error(t('TEXT.FORBIDDEN.USER.DONT_PERMISSION_ACTION'))
+    }
+  }
+
+  const SectionOne = (
+    <Fragment>
+      <Typography color='primary' variant='subtitle1' mb={1}>
+        {t('PARTICIPANT.UPDATE_SUBTITLE')}
+      </Typography>
+      <Grid container spacing={2}>
+        <Grid item xs={12} sm={3} md={2} sx={{ height: { xs: '180px' } }}>
+          <Avatar
+            handleChange={e => manageImages(e, 'participantImage')}
+            image={formData?.participantImage}
+            idbutton={'upload-button-participantImage'}
+          />
+        </Grid>
+        <Grid item xs={12} md={10}>
+          <Grid container spacing={2} padding={1} alignItems='center'>
+            <Grid item md={4} xs={12}>
+              <TextField
+                required
+                error={formData.participantName === ''}
+                fullWidth
+                label={t('LABEL.NAME')}
+                name='participantName'
+                value={formData.participantName || ''}
+                onChange={handleChange}
+                size='small'
+                inputProps={{ maxLength: 100 }}
+              />
+            </Grid>
+            <Grid item md={4} xs={12}>
+              <TextField
+                required
+                error={formData.participantNickName === ''}
+                label={t('LABEL.NICKNAME_PARTICIPANT')}
+                fullWidth
+                name='participantNickName'
+                value={formData.participantNickName || ''}
+                onChange={handleChange}
+                size='small'
+                inputProps={{ maxLength: 100 }}
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+                <FormControl size='small' margin='dense' fullWidth>
+                    <InputLabel id='stateLabel'>{t('LABEL.STATE')}</InputLabel>
+                    <Select
+                        labelId='stateLabel'
+                        label={t('LABEL.STATE')}
+                        name='participantState'
+                        value={formData.participantState || 3}
+                        onChange={handleChange}
+                        size='small'
+                    >
+                        <MenuItem value={1}>{t('TEXT.OLD_PARTICIPANT')}</MenuItem>
+                        <MenuItem value={2}>{t('TEXT.IN_PROGRESS')}</MenuItem>
+                        <MenuItem value={3}>{t('TEXT.UNSPECIFIED')}</MenuItem>
+                    </Select>
+                </FormControl>
+            </Grid>
+          </Grid>
+          <Grid container spacing={1} paddingLeft={1} paddingRight={1}>
+            <Grid item xs={12} md={6}>
+              <TextField
+                required
+                error={formData.participantSurname === ''}
+                label={t('LABEL.SURNAME')}
+                name='participantSurname'
+                value={formData.participantSurname || ''}
+                size='small'
+                onChange={handleChange}
+                fullWidth
+                margin='dense'
+                inputProps={{ maxLength: 100 }}
+              />
+            </Grid>
+            <Grid item md={2} xs={12}>
+              <CheckBox
+                fullWidth
+                name='participantActive'
+                label={t('LABEL.ACTIVE')}
+                value={formData.participantActive}
+                checked={
+                  TYPE === 'NEW'
+                    ? (formData.participantActive = true)
+                    : formData.participantActive
+                }
+                handleChange={handleChange}
+              />
+            </Grid>
+            <Grid item md={2} xs={12}>
+              <CheckBox
+                fullWidth
+                name='participantFrozen'
+                label={t('LABEL.FROZEN')}
+                value={formData.participantFrozen}
+                checked={
+                  TYPE === 'NEW'
+                    ? (formData.participantFrozen = false)
+                    : formData.participantFrozen
+                }
+                handleChange={handleChange}
+              />
+            </Grid>
+            <Grid item md={2} xs={12}>
+              <CheckBox
+                fullWidth
+                name='participantBlocked'
+                label={t('LABEL.BLOCKED')}
+                value={formData.participantBlocked}
+                checked={
+                  TYPE === 'NEW'
+                    ? (formData.participantBlocked = false)
+                    : formData.participantBlocked
+                }
+                handleChange={handleChange}
+              />
+            </Grid>
+          </Grid>
+
+          <Grid container spacing={2} padding={1}>
+            <Grid item md={4} xs={6}>
+              <TextField
+                label={t('LABEL.CITY')}
+                name='participantCity'
+                value={formData.participantCity || ''}
+                size='small'
+                onChange={handleChange}
+                fullWidth
+                margin='dense'
+                inputProps={{ maxLength: 100 }}
+              />
+            </Grid>
+            <Grid item md={3} xs={6}>
+              <TextField
+                label={t('LABEL.POSTCODE')}
+                name='participantZip'
+                value={formData.participantZip || ''}
+                size='small'
+                onChange={handleChange}
+                fullWidth
+                margin='dense'
+                inputProps={{ maxLength: 10 }}
+              />
+            </Grid>
+            <Grid item md={3} xs={6}>
+              <FormControl size='small' margin='dense' fullWidth>
+                <InputLabel id='languageLabel'>
+                  {t('LABEL.LANGUAGE')}
+                </InputLabel>
+                <Select
+                  fullWidth
+                  style={{ height: '40px' }}
+                  label={t('LABEL.LANGUAGE')}
+                  labelId='languageLabel'
+                  defaultValue={1}
+                  name='idLanguage'
+                  onChange={handleChange}
+                  size='small'
+                >
+                  {languageList.map(({ idLanguage, languageCode, Icon }) => {
+                    return (
+                      <MenuItem key={idLanguage} value={idLanguage}>
+                        <Icon style={{ display: 'flex' }} />
+                      </MenuItem>
+                    )
+                  })}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item md={2} xs={6}>
+              <Button
+                variant='contained'
+                onClick={() => {
+                  serviceFiles.getDiploma(formData.idParticipant)
+                }}
+                style={{
+                  minWidth: '70px',
+                  height: 40,
+                  alignSelf: 'center',
+                  marginTop: 8
+                }}
+              >
+                <PictureAsPdfIcon />
+              </Button>
+            </Grid>
+          </Grid>
+        </Grid>
+      </Grid>
+
+      <Typography color='primary' variant='subtitle1' my={1}>
+        {t('TEXT.COMPANY_DATA')}
+      </Typography>
+      <Grid container spacing={2} padding={1}>
+        <Grid item xs={12} md={6}>
+          <AutocompleteSearch
+            pageSize={10}
+            handleSelect={handleSelect}
+            optionSelected={companySelected}
+            initialSearch={
+              formData.idCompany && {
+                globalSearch: '',
+                order: [],
+                pageNumber: 0,
+                pageSize: 1,
+                search: [
+                  {
+                    searchField: 'idCompany',
+                    searchMode: 'equalTo',
+                    searchValue: formData.idCompany
+                  }
+                ]
+              }
+            }
+            disabled={false}
+            setOptionSelected={setCompanySelected}
+            setDisabledAddButton={() => {
+              return false
+            }}
+            fetch={useCallback(
+              async debounceValue =>
+                await serviceCompanies.getCompanies(
+                  cleanDebounce(debounceValue)
+                ),
+              []
+            )}
+            optionsDisabled={option => {
+              return []
+            }}
+            optionsLabel={option => `${option.companyName || ''}`}
+          />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label={t('LABEL.POSITION')}
+            name='participantPosition'
+            value={formData.participantPosition || ''}
+            size='small'
+            onChange={handleChange}
+            inputProps={{ maxLength: 100 }}
+          />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label={t('LABEL.LATER_COMPANY')}
+            name='participantNextCompany'
+            value={formData.participantNextCompany || ''}
+            size='small'
+            onChange={handleChange}
+            inputProps={{ maxLength: 100 }}
+          />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label={t('LABEL.NEW_CHARGE')}
+            name='participantNextPosition'
+            value={formData.participantNextPosition || ''}
+            size='small'
+            onChange={handleChange}
+            inputProps={{ maxLength: 100 }}
+          />
+        </Grid>
+        {formData.idCompany === 999999 && (
+          <Grid item xs={12} md={6}>
+            <TextField
+              fullWidth
+              label={t('LABEL.OTHER_COMPANY')}
+              name='participantOtherCompany'
+              value={formData.participantOtherCompany || ''}
+              size='small'
+              onChange={handleChange}
+              inputProps={{ maxLength: 100 }}
+            />
+          </Grid>
+        )}
+      </Grid>
+    </Fragment>
+  )
+
+  const SectionTwo = (
+    <Fragment>
+      <Typography color='primary' variant='subtitle1'>
+        {t('FORM.CONTACT_DATA')}
+      </Typography>
+
+      <Grid container spacing={1}>
+        <Grid item xs={12} md={7}>
+          <TextField
+            required
+            error={formData.participantEmail === ''}
+            fullWidth
+            label={t('LABEL.EMAIL')}
+            name='participantEmail'
+            value={formData.participantEmail || ''}
+            size='small'
+            onChange={handleChange}
+            margin='dense'
+            style={{ marginRight: 10 }}
+            inputProps={{ maxLength: 100 }}
+          />
+        </Grid>
+        <Grid item xs={12} md={5} display='flex'>
+          <CheckBox
+            fullWidth
+            style={{ alignSelf: 'center', marginTop: 4 }}
+            name='participantShareEmail'
+            label={t('LABEL.SHARE_EMAIL')}
+            value={formData.participantShareEmail}
+            checked={formData.participantShareEmail}
+            handleChange={handleChange}
+            inputProps={{ maxLength: 100 }}
+          />
+        </Grid>
+      </Grid>
+
+      <Grid container spacing={1} sx={{ marginTop: { xs: 1, md: 0 } }}>
+        <Grid item xs={12} md={7}>
+          <TextField
+            required
+            error={formData.participantPhone === ''}
+            type='tel'
+            label={t('LABEL.PHONE')}
+            name='participantPhone'
+            value={formData.participantPhone || ''}
+            size='small'
+            onChange={handleChange}
+            fullWidth
+            inputProps={{ maxLength: 20 }}
+          />
+        </Grid>
+        <Grid item xs={12} md={5} display='flex'>
+          <CheckBox
+            fullWidth
+            style={{ alignSelf: 'center' }}
+            name='participantSharePhone'
+            label={t('LABEL.SHARE_PHONE')}
+            value={formData.participantSharePhone}
+            checked={formData.participantSharePhone}
+            handleChange={handleChange}
+          />
+        </Grid>
+        <Grid item xs={12} display='flex'>
+          <FormControl size='small' margin='dense' fullWidth>
+            <InputLabel id='country'>{t('LABEL.COUNTRY_CAMPUS')}</InputLabel>
+            <Select
+              labelId='country'
+              label={t('LABEL.COUNTRY_CAMPUS')}
+              value={formData.idCountry || ''}
+              name='idCountry'
+              onChange={handleChange}
+              size='small'
+            >
+              {countries.map((country, i) => (
+                <MenuItem value={country.idCountry}>
+                  {country.countryName}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Grid>
+      </Grid>
+
+      <Typography color='primary' variant='subtitle1' my={1}>
+        {t('LABEL.REMARKS')}
+      </Typography>
+      <TextField
+        name='participantRemarks'
+        value={formData.participantRemarks || ''}
+        size='small'
+        rows={4}
+        multiline
+        fullWidth
+        onChange={handleChange}
+      />
+    </Fragment>
+  )
+
+  if (loading) {
+    return <Loading />
+  }
+  return (
+    <div className={classes.container}>
+      <Dialog
+        open={openDialog}
+        close={() => setOpenDialog(false)}
+        hasCloseBtn={false}
+        title={t('CONFIRM.TITLE_DESACTIVATED_PARTICIPANT')}
+        subtitle={t('CONFIRM.UNRECOVERY_DELETE')}
+        height={200}
+        actions={
+          <Box display='flex' alignItems='center'>
+            <Box mr={1}>
+              <Button
+                variant='contained'
+                onClick={() => setOpenDialog(false)}
+                color='error'
+              >
+                {t('BUTTON.CANCEL')}
+              </Button>
+            </Box>
+            <Button variant='contained' onClick={() => handleSubmit('DELETE')}>
+              {t('BUTTON.DELETE')}
+            </Button>
+          </Box>
+        }
+      />
+      <Dialog
+        open={openDialogRequestPassword}
+        close={() => setOpenDialogRequestPassword(false)}
+        title={t('CONFIRM.TITLE_SEND_REQUEST_CHANGE_PASSWORD')}
+        subtitle={t('CONFIRM.SUBTITLE_SEND_REQUEST_CHANGE_PASSWORD')}
+        width={300}
+        actions={
+          <Box display='flex' alignItems='center'>
+            <Box mr={1}>
+              <Button
+                variant='contained'
+                onClick={() => setOpenDialogRequestPassword(false)}
+                color='error'
+              >
+                {t('BUTTON.CANCEL')}
+              </Button>
+            </Box>
+            <Button
+              variant='contained'
+              onClick={() =>
+                handleSubmitRequestPassword(formData.participantEmail)
+              }
+            >
+              {t('BUTTON.OK')}
+            </Button>
+          </Box>
+        }
+      />
+
+      <HeaderTitle title={HEADER_TITLE} subtitle={HEADER_SUBTITLE}>
+        {isAdmin && TYPE !== 'NEW' && (
+          <Box mr={1}>
+            <Button
+              variant='contained'
+              style={{ transform: 'translateX(-5%)' }}
+              onClick={simulatedLogin}
+            >
+              {t('BUTTON.SIMULATED_LOGIN')}
+            </Button>
+          </Box>
+        )}
+        {TYPE !== 'NEW' && (
+          <Button
+            variant='contained'
+            style={{ transform: 'translateX(-5%)' }}
+            onClick={() => setOpenDialogRequestPassword(true)}
+            color='error'
+          >
+            {t('BUTTON.RESET_PASSWORD')}
+          </Button>
+        )}
+        <FormActions
+          show={TYPE === 'UPDATE'}
+          handleDelete={() => setOpenDialog(true)}
+          handleUndo={() => setFormData(PARTICIPANT_DATA)}
+          handleSave={() => handleSubmit(TYPE)}
+          disabledButton={disabledSaveButton}
+          urlBack='/participants'
+        />
+      </HeaderTitle>
+
+      {TYPE !== 'NEW' && (
+        <Box mb={1} ml={1}>
+          <Typography variant='caption' mr={2}>
+            {t('LABEL.REGISTER_DATE')}{': '}
+            {!formData?.participantDatetimeCreated ? (
+              'Sin fecha'
+            ) : (
+              <Moment format='DD/MM/YYYY'>
+                {formData?.participantDatetimeCreated}
+              </Moment>
+            )}
+          </Typography>
+          <Typography variant='caption'>
+          {t('LABEL.USER_ID')}: {formData.idParticipant}
+          </Typography>
+        </Box>
+      )}
+
+      <Grid container spacing={2}>
+        <Grid item xs={12} lg={7}>
+          <Card fullHeight>{SectionOne}</Card>
+        </Grid>
+        <Grid item xs={12} lg={5}>
+          <Card fullHeight>{SectionTwo}</Card>
+        </Grid>
+      </Grid>
+      <Grid container spacing={2}>
+        <Grid item xs={12} mt={2}>
+          <Card fullHeight>
+            <Typography color='primary' variant='subtitle1' my={1}>
+              {t('TEXT.PARTICIPANT_CYCLES')}
+            </Typography>
+            <ParticipantCycles idParticipant={staticIdParticipant} />
+          </Card>
+        </Grid>
+      </Grid>
+    </div>
+  )
+}
+
+export default ParticipantDetail
